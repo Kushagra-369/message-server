@@ -231,45 +231,45 @@ export const user_login = async (req: Request, res: Response) => {
 }
 
 export const auth_me = async (req: any, res: Response) => {
-  try {
-    const user = req.user;
+    try {
+        const user = req.user;
 
-    return res.status(200).json({
-      success: true,
-      user,
-    });
-  } catch (err) {
-    return errorHandler(err, res);
-  }
+        return res.status(200).json({
+            success: true,
+            user,
+        });
+    } catch (err) {
+        return errorHandler(err, res);
+    }
 };
 
 
 export const get_user_by_id = async (req: Request, res: Response) => {
-  try {
-    const { userId } = req.params;
+    try {
+        const { userId } = req.params;
 
-    if (!userId) {
-      return res.status(400).json({
-        message: "User ID required!",
-      });
+        if (!userId) {
+            return res.status(400).json({
+                message: "User ID required!",
+            });
+        }
+
+        const user = await User.findById(userId).select("-password");
+
+        if (!user) {
+            return res.status(404).json({
+                message: "User not found!",
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "User fetched successfully",
+            user,
+        });
+    } catch (err) {
+        return errorHandler(err, res);
     }
-
-    const user = await User.findById(userId).select("-password");
-
-    if (!user) {
-      return res.status(404).json({
-        message: "User not found!",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: "User fetched successfully",
-      user,
-    });
-  } catch (err) {
-    return errorHandler(err, res);
-  }
 };
 
 
@@ -584,7 +584,9 @@ export const forgotten_update_password = async (req: Request, res: Response) => 
         }
 
         // JWT verify karo
-        const decoded: any = jwt.verify(token, process.env.RESET_PASSWORD_SECRET!);
+        const tokenStr = Array.isArray(token) ? token[0] : token;
+
+        const decoded: any = jwt.verify(tokenStr as string, process.env.RESET_PASSWORD_SECRET!);
 
         const user = await User.findById(decoded.userId);
 
