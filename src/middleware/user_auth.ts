@@ -11,13 +11,11 @@ export const authenticateUser: RequestHandler = async (
   try {
     /* ================= TOKEN EXTRACTION ================= */
 
-    const authHeader = req.headers.authorization;
+    const token = req.cookies?.access_token;
 
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    if (!token) {
       return res.status(401).json({ message: "Authorization token missing" });
     }
-
-    const token = authHeader.split(" ")[1];
 
     if (!token) {
       return res.status(401).json({ message: "Token missing" });
@@ -43,12 +41,13 @@ export const authenticateUser: RequestHandler = async (
 
     const tokenUA = (decoded.ua || "").toString().toLowerCase();
 
-    if (
-      tokenUA &&
-      currentUA &&
-      !currentUA.includes(tokenUA.split(" ")[0])
-    ) {
-      return res.status(401).json({ message: "Device mismatch" });
+    if (tokenUA && currentUA) {
+      const tokenBrowser = tokenUA.split(" ")[0];
+      const currentBrowser = currentUA.split(" ")[0];
+
+      if (tokenBrowser !== currentBrowser) {
+        return res.status(401).json({ message: "Device mismatch" });
+      }
     }
 
     /* ================= OBJECT ID VALIDATION ================= */

@@ -11,8 +11,10 @@ import rateLimit from "express-rate-limit";
 import hpp from "hpp";
 
 import { firewall } from "./middleware/firewall";
+import cookieParser from "cookie-parser";
 
 const app = express();
+app.use(cookieParser());
 
 /* ================= EXPRESS HARDENING ================= */
 

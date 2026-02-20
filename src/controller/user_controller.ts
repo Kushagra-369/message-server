@@ -241,12 +241,27 @@ export const user_login = async (req: Request, res: Response) => {
         );
         const safeUser = { _id: user._id, username: user.username, first_name: user.first_name, last_name: user.last_name, email: user.email, profileImg: user.profileImg, role: user.role, bio: user.bio, isOnline: user.isOnline, status: user.status, };
 
-        res.status(200).json({ message: "Login successful!", user: safeUser, token, });
+        res.cookie("access_token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", maxAge: 7 * 24 * 60 * 60 * 1000 });
+
+        res.status(200).json({ message: "Login successful!", user: safeUser });
     }
 
     catch (err) { return errorHandler(err, res); }
 }
 
+export const logout = async (req: Request, res: Response) => {
+
+    res.clearCookie("access_token", {
+        httpOnly: true,
+        secure: true,       // production me true
+        sameSite: "none",   // agar cross origin hai
+        path: "/",
+    });
+
+    return res.status(200).json({
+        message: "Logged out successfully",
+    });
+};
 export const auth_me = async (req: any, res: Response) => {
     try {
         const authUser = req.user;
@@ -358,8 +373,9 @@ export const user_google_auth = async (req: Request, res: Response) => {
         );
 
         // ✅ FRONTEND KO TOKEN BHEJO
-        return res.redirect(`http://localhost:5173/login?token=${token}`);
+        res.cookie("access_token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", maxAge: 7 * 24 * 60 * 60 * 1000 });
 
+        return res.redirect("http://localhost:5173/");
     } catch (err) {
         return errorHandler(err, res);
     }
@@ -403,7 +419,19 @@ export const user_github_auth = async (req: Request, res: Response) => {
             });
         }
 
-        return res.redirect("http://localhost:5173/home");
+        const token = jwt.sign(
+            {
+                userId: user._id,
+                ua: req.headers["user-agent"],
+                ip: req.ip
+            },
+            process.env.JWT_User_SECRET_KEY as string,
+            { expiresIn: "7d" }
+        );
+
+        res.cookie("access_token", token, { httpOnly: true, secure: process.env.NODE_ENV === "production", sameSite: "strict", maxAge: 7 * 24 * 60 * 60 * 1000 });
+
+        return res.redirect("http://localhost:5173/");
 
     } catch (err) {
         return errorHandler(err, res);

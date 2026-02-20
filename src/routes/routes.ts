@@ -6,7 +6,7 @@ import { loginLimiter, otpLimiter } from "../middleware/rate_limiter";
 import { validate } from "../middleware/validate";
 import {validateLogin,validateSignup,validateOTP,validatePasswordUpdate,validateForgotEmail,validateTokenParam} from "../validation/auth.validation";
 
-import {create_user,user_otp_verification,user_login,auth_me,get_user_by_id,user_google_auth,user_github_auth,user_resend_otp,user_update_password,user_forgot_password_gmail,forgotten_update_password} from "../controller/user_controller";
+import {create_user,user_otp_verification,logout,user_login,auth_me,get_user_by_id,user_google_auth,user_github_auth,user_resend_otp,user_update_password,user_forgot_password_gmail,forgotten_update_password} from "../controller/user_controller";
 
 const router = express.Router();
 
@@ -22,6 +22,7 @@ router.post("/forgotten_update_password/:token", loginLimiter, validateTokenPara
 
 /* ================= PROTECTED ROUTES ================= */
 
+router.post("/logout", authenticateUser, logout);
 router.post("/update_password", authenticateUser, validatePasswordUpdate, validate, user_update_password);
 router.get("/get_user_by_id/:userId", authenticateUser, get_user_by_id);
 router.get("/auth_me", authenticateUser, auth_me);
