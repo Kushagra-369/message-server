@@ -234,10 +234,26 @@ export const auth_me = async (req: any, res: Response) => {
     try {
         const user = req.user;
 
+        const safeUser = {
+            _id: user._id,
+            username: user.username,
+            first_name: user.first_name,
+            last_name: user.last_name,
+            email: user.email,
+            profileImg: user.profileImg,
+            bio: user.bio,
+            role: user.role,
+            isOnline: user.isOnline,
+            status: user.status,
+            createdAt: user.createdAt,
+            updatedAt: user.updatedAt,
+        };
+
         return res.status(200).json({
             success: true,
-            user,
+            user: safeUser,
         });
+
     } catch (err) {
         return errorHandler(err, res);
     }
