@@ -1,41 +1,93 @@
+import { v2 as cloudinary } from "cloudinary";
+import sharp from "sharp";
 
-const cloudinary = require('cloudinary').v2;
-const sharp = require('sharp');
-require('dotenv').config();
+/* ================= ENV VALIDATION ================= */
 
+const cloudName = process.env.Cloud_name;
+const apiKey = process.env.API_key;
+const apiSecret = process.env.API_secret;
+
+if (!cloudName || !apiKey || !apiSecret) {
+  throw new Error("❌ Cloudinary environment variables missing");
+}
+
+/* ================= CLOUDINARY CONFIG ================= */
 
 cloudinary.config({
-    cloud_name: process.env.Cloud_name,
-    api_key: process.env.API_key,
-    api_secret: process.env.API_secret
+  cloud_name: cloudName,
+  api_key: apiKey,
+  api_secret: apiSecret
 });
 
-export const upload_project_img = async (img: Buffer | string) => {
-    try {
-       
-        const optimizedBuffer = await sharp(img)
-            .resize(1080, 720, { fit: "inside", withoutEnlargement: true })
-            .jpeg({ quality: 80, mozjpeg: true })
-            .toBuffer();
+/* ================= CONSTANTS ================= */
 
-        const uploadResult = await cloudinary.uploader.upload(
-            `data:image/jpeg;base64,${optimizedBuffer.toString("base64")}`,
-            { resource_type: "auto", quality: "auto", folder: "travelly/profile" }
-        );
-       
+const MAX_SIZE = 2 * 1024 * 1024; // 2MB
 
-        return { public_id: uploadResult.public_id, secure_url: uploadResult.secure_url };
-    } catch (error) {
-        console.error("Error during image optimization or upload:", error);
-        throw error;
+/* ================= UPLOAD IMAGE ================= */
+
+export const upload_project_img = async (img: Buffer) => {
+  try {
+    /* ---------- BASIC VALIDATION ---------- */
+
+    if (!img || !Buffer.isBuffer(img)) {
+      throw new Error("Invalid image buffer");
     }
+
+    if (img.length > MAX_SIZE) {
+      throw new Error("Image too large");
+    }
+
+    /* ---------- FILE TYPE CHECK ---------- */
+
+    const metadata = await sharp(img).metadata();
+
+    if (
+      !metadata.format ||
+      !["jpeg", "jpg", "png", "webp"].includes(metadata.format)
+    ) {
+      throw new Error("Unsupported image format");
+    }
+
+    /* ---------- IMAGE OPTIMIZATION ---------- */
+
+    const optimizedBuffer = await sharp(img)
+      .rotate()
+      .resize(1080, 720, { fit: "inside", withoutEnlargement: true })
+      .jpeg({ quality: 80, mozjpeg: true })
+      .toBuffer();
+
+    /* ---------- CLOUDINARY UPLOAD ---------- */
+
+    const uploadResult = await cloudinary.uploader.upload(
+      `data:image/jpeg;base64,${optimizedBuffer.toString("base64")}`,
+      {
+        resource_type: "image",
+        quality: "auto",
+        folder: "travelly/profile"
+      }
+    );
+
+    return {
+      public_id: uploadResult.public_id,
+      secure_url: uploadResult.secure_url
+    };
+  } catch (error) {
+    console.error("Upload Error:", error);
+    throw new Error("Image upload failed");
+  }
 };
 
+/* ================= DELETE IMAGE ================= */
+
 export const deleteImg = async (publicId: string) => {
-    try {
-        await cloudinary.uploader.destroy(publicId);
-    } catch (error) {
-        console.error("Error deleting image:", error);
-        throw error;
-    }
-}; 
+  try {
+    if (!publicId) return;
+
+    await cloudinary.uploader.destroy(publicId, {
+      resource_type: "image"
+    });
+  } catch (error) {
+    console.error("Delete Image Error:", error);
+    throw new Error("Image delete failed");
+  }
+};

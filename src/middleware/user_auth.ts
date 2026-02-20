@@ -1,69 +1,104 @@
-import { Request, Response, NextFunction } from "express";
+import { Request, Response, NextFunction, RequestHandler } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import User from "../model/user_model";
 import mongoose from "mongoose";
 
-interface AuthRequest extends Request {
-  user?: any;
-}
-
-export const authenticateUser = async (
-  req: AuthRequest,
+export const authenticateUser: RequestHandler = async (
+  req: Request,
   res: Response,
   next: NextFunction
 ) => {
   try {
+    /* ================= TOKEN EXTRACTION ================= */
+
     const authHeader = req.headers.authorization;
 
     if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({ message: "Authorization token missing!" });
+      return res.status(401).json({ message: "Authorization token missing" });
     }
 
     const token = authHeader.split(" ")[1];
+
     if (!token) {
-      return res.status(401).json({ message: "Token missing!" });
+      return res.status(401).json({ message: "Token missing" });
     }
+
+    /* ================= JWT VERIFY ================= */
 
     const decoded = jwt.verify(
       token,
-      process.env.JWT_User_SECRET_KEY as string
+      process.env.JWT_User_SECRET_KEY as string,
+      { algorithms: ["HS256"] }
     ) as JwtPayload;
 
-    if (decoded.ua !== req.headers["user-agent"]) {
+    if (!decoded || !decoded.userId) {
+      return res.status(401).json({ message: "Invalid token payload" });
+    }
+
+    /* ================= DEVICE CHECK ================= */
+
+    const currentUA = (req.headers["user-agent"] || "")
+      .toString()
+      .toLowerCase();
+
+    const tokenUA = (decoded.ua || "").toString().toLowerCase();
+
+    if (
+      tokenUA &&
+      currentUA &&
+      !currentUA.includes(tokenUA.split(" ")[0])
+    ) {
       return res.status(401).json({ message: "Device mismatch" });
     }
+
+    /* ================= OBJECT ID VALIDATION ================= */
 
     const userId = decoded.userId;
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(401).json({ message: "Invalid token!" });
+      return res.status(401).json({ message: "Invalid token" });
     }
 
-    const user = await User.findById(userId);
+    /* ================= USER FETCH ================= */
+
+    const user = await User.findById(userId)
+      .select("_id role verification")
+      .lean();
+
     if (!user) {
-      return res.status(404).json({ message: "User not found!" });
+      return res.status(404).json({ message: "User not found" });
     }
 
-    if (user.verification.isDelete) {
-      return res.status(403).json({ message: "User is deleted!" });
+    if (user.verification?.isDelete) {
+      return res.status(403).json({ message: "User deleted" });
     }
 
-    if (!user.verification.isVerify) {
-      return res.status(403).json({ message: "User is not verified!" });
+    if (!user.verification?.isVerify) {
+      return res.status(403).json({ message: "User not verified" });
     }
 
     if (
-      !user.verification.isEmailVerified &&
-      !user.verification.isMobileVerified
+      !user.verification?.isEmailVerified &&
+      !user.verification?.isMobileVerified
     ) {
-      return res.status(403).json({ message: "Email or mobile not verified!" });
+      return res.status(403).json({ message: "Verification required" });
     }
 
-    req.user = user;
+    /* ================= SAFE ATTACH ================= */
+
+    req.user = {
+      _id: user._id.toString(),
+      role: user.role,
+    };
 
     next();
-  } catch (error) {
-    console.error("JWT Auth Error:", error);
+  } catch (error: any) {
+    console.error("JWT Auth Error:", error.message);
+
+    if (error.name === "TokenExpiredError") {
+      return res.status(401).json({ message: "Token expired" });
+    }
+
     return res.status(401).json({ message: "Unauthorized" });
   }
 };

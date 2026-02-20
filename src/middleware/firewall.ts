@@ -2,59 +2,110 @@ import { Request, Response, NextFunction } from "express";
 
 /* ================= MEMORY STORES ================= */
 
-// simple temp IP ban store
+// IP ban store with expiry
 const bannedIPs = new Map<string, number>();
 
-// request counter (basic anti-bot)
-const requestMap = new Map<string, number>();
+// request counter with reset window
+const requestMap = new Map<string, { count: number; time: number }>();
+
+// config
+const REQUEST_WINDOW = 60 * 1000; // 1 min window
+const MAX_REQUESTS = 100;
 
 export const firewall = (req: Request, res: Response, next: NextFunction) => {
 
-  const ip = req.ip ?? "";
+  /* ================= SAFE IP DETECTION ================= */
+  /* ================= AUTH ROUTE BYPASS ================= */
+  // login / oauth routes should never be blocked
+  const authBypassRoutes = [
+    "/user_login",
+    "/auth/google",
+    "/auth/github",
+    "/auth/google/callback",
+    "/auth/github/callback",
+  ];
+
+  if (authBypassRoutes.some(route => req.path.startsWith(route))) {
+    return next();
+  }
+
+  const ip =
+    (req.headers["x-forwarded-for"] as string)?.split(",")[0]?.trim() ||
+    req.socket.remoteAddress ||
+    "unknown";
+
   const userAgent = (req.headers["user-agent"] || "").toLowerCase();
 
   /* ================= TEMP IP BAN CHECK ================= */
 
   const banExpiry = bannedIPs.get(ip);
-  if (banExpiry && Date.now() < banExpiry) {
-    return res.status(403).json({ msg: "IP temporarily blocked" });
-  } else if (banExpiry) {
+
+  if (banExpiry) {
+    if (Date.now() < banExpiry) {
+      return res.status(403).json({ msg: "IP temporarily blocked" });
+    }
     bannedIPs.delete(ip);
   }
 
-  /* ================= BAD USER AGENTS ================= */
-
-  const badAgents = ["sqlmap", "nikto", "curl", "postman", "wget"];
+  /* ================= BASIC BOT DETECTION ================= */
+  // NOTE: user-agent blocking is weak, only soft filter
+  const badAgents = ["sqlmap", "nikto", "acunetix"];
 
   if (badAgents.some(agent => userAgent.includes(agent))) {
-    bannedIPs.set(ip, Date.now() + 10 * 60 * 1000); // 10 min ban
-    return res.status(403).json({ msg: "Blocked by firewall (agent)" });
+    bannedIPs.set(ip, Date.now() + 10 * 60 * 1000);
+    return res.status(403).json({ msg: "Blocked by firewall" });
   }
 
-  /* ================= LARGE PAYLOAD BLOCK ================= */
+  /* ================= REQUEST FLOOD CHECK ================= */
 
-  const contentLength = req.headers["content-length"];
-  if (contentLength && Number(contentLength) > 1_000_000) {
-    return res.status(413).json({ msg: "Payload too large" });
+  const now = Date.now();
+  const record = requestMap.get(ip);
+
+  if (!record) {
+    requestMap.set(ip, { count: 1, time: now });
+  } else {
+    if (now - record.time > REQUEST_WINDOW) {
+      // reset window
+      requestMap.set(ip, { count: 1, time: now });
+    } else {
+      record.count += 1;
+
+      if (record.count > MAX_REQUESTS) {
+        bannedIPs.set(ip, now + 5 * 60 * 1000);
+        return res.status(429).json({ msg: "Too many requests" });
+      }
+    }
   }
 
-  /* ================= SIMPLE SPAM DETECTOR ================= */
+  /* ================= SIMPLE PAYLOAD SCAN ================= */
 
-  const count = requestMap.get(ip) || 0;
-  requestMap.set(ip, count + 1);
+  const bodyString = JSON.stringify(req.body || {}).toLowerCase();
 
-  if (count > 100) {
-    bannedIPs.set(ip, Date.now() + 5 * 60 * 1000); // auto ban 5 min
-    return res.status(429).json({ msg: "Too many suspicious requests" });
-  }
-
-  /* ================= BASIC INJECTION CHECK ================= */
-
-  const bodyString = JSON.stringify(req.body || {});
-  if (bodyString.includes("$where") || bodyString.includes("<script")) {
-    bannedIPs.set(ip, Date.now() + 15 * 60 * 1000);
+  if (
+    bodyString.includes("$where") ||
+    bodyString.includes("<script") ||
+    bodyString.includes("javascript:")
+  ) {
+    bannedIPs.set(ip, now + 15 * 60 * 1000);
     return res.status(400).json({ msg: "Malicious payload detected" });
   }
 
   next();
 };
+
+/* ================= CLEANUP MEMORY ================= */
+
+// prevent memory leak
+setInterval(() => {
+  const now = Date.now();
+
+  for (const [ip, expiry] of bannedIPs.entries()) {
+    if (now > expiry) bannedIPs.delete(ip);
+  }
+
+  for (const [ip, data] of requestMap.entries()) {
+    if (now - data.time > REQUEST_WINDOW) {
+      requestMap.delete(ip);
+    }
+  }
+}, 60 * 1000);

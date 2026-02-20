@@ -9,43 +9,50 @@ import router from "./routes/routes";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import hpp from "hpp";
-import mongoSanitize from "express-mongo-sanitize";
 
-import { firewall } from "./middleware/firewall"; // 👈 custom firewall add
+import { firewall } from "./middleware/firewall";
 
 const app = express();
 
-/* ================= SECURITY FIREWALL ================= */
+/* ================= EXPRESS HARDENING ================= */
 
-// trust proxy (important for rate limit + IP detection)
+// hide tech stack
+app.disable("x-powered-by");
+
+// trust proxy (needed for real IP detection)
 app.set("trust proxy", 1);
 
-// 🔥 secure headers
-app.use(helmet());
+/* ================= SECURITY MIDDLEWARE ================= */
 
-// 🔥 secure cors
+// 🔐 secure headers
+app.use(
+  helmet({
+    crossOriginResourcePolicy: { policy: "cross-origin" }
+  })
+);
+
+// 🔐 secure CORS
 app.use(
   cors({
     origin: process.env.CLIENT_URL || "http://localhost:5173",
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
   })
 );
 
-// 🔥 body parser (limit added)
+// 🔐 body parser (small limit = DOS protection)
 app.use(express.json({ limit: "10kb" }));
 
-// 🔥 Mongo injection protection
-app.use(
-  mongoSanitize({
-    allowDots: true,
-    replaceWith: "_",
-  })
-);
+// 🔐 NoSQL injection protection
 
-// 🔥 custom firewall (IP / bot / payload detection)
+
+// 🔐 query pollution protection
+app.use(hpp());
+
+// 🔐 custom firewall (runs before rate limit)
 app.use(firewall);
 
-// 🔥 brute force firewall (GLOBAL)
+// 🔐 global rate limiter
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -54,9 +61,6 @@ const limiter = rateLimit({
   message: { msg: "Too many requests — firewall active" },
 });
 app.use(limiter);
-
-// 🔥 query pollution attack block
-app.use(hpp());
 
 /* ================= DATABASE ================= */
 
@@ -82,6 +86,16 @@ app.get("/", (_req, res) => {
 });
 
 app.use("/", router);
+
+/* ================= GLOBAL ERROR HANDLER (VERY IMPORTANT) ================= */
+
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("🔥 Server Error:", err.message);
+
+  res.status(err.status || 500).json({
+    msg: "Internal server error",
+  });
+});
 
 /* ================= SERVER ================= */
 

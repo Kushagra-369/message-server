@@ -83,8 +83,8 @@ export const create_user = async (req: Request, res: Response) => {
 
         let profileImg: any = null;
 
-        if (file) {
-            profileImg = await upload_project_img(file.path);
+        if (file && file.buffer instanceof Buffer) {
+            profileImg = await upload_project_img(file.buffer);
         }
 
         const bcryptPassword = await bcrypt.hash(password, 10);
@@ -249,7 +249,13 @@ export const user_login = async (req: Request, res: Response) => {
 
 export const auth_me = async (req: any, res: Response) => {
     try {
-        const user = req.user;
+        const authUser = req.user;
+
+        const user = await User.findById(authUser._id);
+
+        if (!user) {
+            return res.status(404).json({ message: "User not found!" });
+        }
 
         const safeUser = {
             _id: user._id,
@@ -266,14 +272,9 @@ export const auth_me = async (req: any, res: Response) => {
             updatedAt: user.updatedAt,
         };
 
-        return res.status(200).json({
-            success: true,
-            user: safeUser,
-        });
+        return res.status(200).json({ success: true, user: safeUser });
 
-    } catch (err) {
-        return errorHandler(err, res);
-    }
+    } catch (err) { return errorHandler(err, res); }
 };
 
 
@@ -347,7 +348,11 @@ export const user_google_auth = async (req: Request, res: Response) => {
 
         // ✅ SAME TOKEN LOGIC AS NORMAL LOGIN
         const token = jwt.sign(
-            { userId: user._id },
+            {
+                userId: user._id,
+                ua: req.headers["user-agent"],
+                ip: req.ip
+            },
             process.env.JWT_User_SECRET_KEY as string,
             { expiresIn: "7d" }
         );
@@ -445,13 +450,7 @@ export const user_resend_otp = async (req: Request, res: Response) => {
 
 export const user_update_password = async (req: Request, res: Response) => {
     try {
-        const { email, username, mobile_No, oldPassword, newPassword } = req.body;
-
-        if (!email && !username && !mobile_No) {
-            return res.status(400).json({
-                message: "Provide email, username, or mobile number",
-            });
-        }
+        const { oldPassword, newPassword } = req.body;
 
         if (!oldPassword || !newPassword) {
             return res.status(400).json({
@@ -459,13 +458,13 @@ export const user_update_password = async (req: Request, res: Response) => {
             });
         }
 
-        // ✅ Build query safely
-        const query: any = {};
-        if (email) query.email = email;
-        if (username) query.username = username;
-        if (mobile_No) query.mobile_No = mobile_No;
+        const authUser = (req as any).user;
 
-        const user = await User.findOne(query).select("+password");
+        if (!authUser?._id) {
+            return res.status(401).json({ message: "Unauthorized!" });
+        }
+
+        const user = await User.findById(authUser._id).select("+password");
 
         if (!user) {
             return res.status(404).json({ message: "User not found" });
@@ -540,7 +539,10 @@ export const update_user_profile_image = async (req: Request, res: Response) => 
         }
 
         // ✅ upload new image
-        const uploadedImg = await upload_project_img(file.path);
+        if (!file?.buffer) {
+            return res.status(400).json({ message: "Invalid image buffer!" });
+        }
+        const uploadedImg = await upload_project_img(file.buffer);
 
         user.profileImg = {
             public_id: uploadedImg.public_id,
@@ -616,32 +618,38 @@ export const forgotten_update_password = async (req: Request, res: Response) => 
             return res.status(400).json({ message: "Token missing!" });
         }
 
-        // JWT verify karo
         const tokenStr = Array.isArray(token) ? token[0] : token;
 
-        const decoded: any = jwt.verify(tokenStr as string, process.env.RESET_PASSWORD_SECRET!);
+        const decoded: any = jwt.verify(
+            tokenStr as string,
+            process.env.RESET_PASSWORD_SECRET!
+        );
 
-        const user = await User.findById(decoded.userId);
+        const user = await User.findById(decoded.userId).select("+password");
 
         if (!user) {
             return res.status(404).json({ message: "User not found!" });
         }
 
+        /* 🔥 IMPORTANT SECURITY CHECK */
+        if (user.verification.forgotPassswordToken !== tokenStr) {
+            return res.status(400).json({ message: "Invalid or expired reset token!" });
+        }
+
         user.password = await bcrypt.hash(newPassword, 10);
+
+        /* 🔥 TOKEN REMOVE AFTER USE (PREVENT REUSE) */
+        user.verification.forgotPassswordToken = null;
+        user.verification.forgotPasswordExpire = null;
+
         await user.save();
-
-
-        console.log("DECODED TOKEN =", decoded);
-
 
         return res.status(200).json({
             message: "Password updated successfully",
         });
 
     } catch (err) {
-        console.log("JWT ERROR =", err); // 👈 ADD THIS
         return errorHandler(err, res);
     }
-
 };
 
