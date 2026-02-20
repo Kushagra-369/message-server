@@ -12,7 +12,7 @@ const UserSchema: Schema<IUser> = new Schema(
 
     email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true, },
     country_code: { type: String, required: true, enum: ['+1', '+44', '+91', '+92', '+971'], match: /^\+\d{1,4}$/ },
-    mobile_No: { type: String, required: false, unique: true,  sparse: true,  trim: true },
+    mobile_No: { type: String, required: false, unique: true, sparse: true, trim: true },
     avatar: { type: String, default: "https://via.placeholder.com/150" },
 
     password: { type: String, required: true, select: false, },
@@ -36,10 +36,10 @@ const UserSchema: Schema<IUser> = new Schema(
       isEmailVerified: { type: Boolean, default: false },
       isMobileVerified: { type: Boolean, default: false },
       isDelete: { type: Boolean, default: false },
-      isVerify: { type: Boolean, default: false }, 
+      isVerify: { type: Boolean, default: false },
       emailotp: { type: Number },
       mobileotp: { type: Number },
-      userOtp : { type: Number, default: null },
+      userOtp: { type: Number, default: null },
       otpExpiry: { type: Date, default: null },
       wrongAttempts: { type: Number, default: 0 },
       lockUntil: { type: Date, default: null },
@@ -48,7 +48,7 @@ const UserSchema: Schema<IUser> = new Schema(
       forgotPasswordOTPExpiry: { type: Number, default: null },
       forgotPassswordToken: { type: String, default: null },
       forgotPasswordExpire: { type: Number, default: null },
-      
+
     },
 
 

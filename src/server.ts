@@ -11,6 +11,8 @@ import rateLimit from "express-rate-limit";
 import hpp from "hpp";
 import mongoSanitize from "express-mongo-sanitize";
 
+import { firewall } from "./middleware/firewall"; // 👈 custom firewall add
+
 const app = express();
 
 /* ================= SECURITY FIREWALL ================= */
@@ -32,7 +34,16 @@ app.use(
 // 🔥 body parser (limit added)
 app.use(express.json({ limit: "10kb" }));
 
-// 🔥 Mongo injection protection (AFTER json parser)
+// 🔥 Mongo injection protection
+app.use(
+  mongoSanitize({
+    allowDots: true,
+    replaceWith: "_",
+  })
+);
+
+// 🔥 custom firewall (IP / bot / payload detection)
+app.use(firewall);
 
 // 🔥 brute force firewall (GLOBAL)
 const limiter = rateLimit({
@@ -46,7 +57,6 @@ app.use(limiter);
 
 // 🔥 query pollution attack block
 app.use(hpp());
-
 
 /* ================= DATABASE ================= */
 

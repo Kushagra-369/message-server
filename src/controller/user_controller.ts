@@ -11,6 +11,11 @@ import { Profile } from "passport-google-oauth20";
 
 export const create_user = async (req: Request, res: Response) => {
     try {
+        const { website } = req.body;
+
+        if (website) {
+            return res.status(400).json({ message: "Bot detected" });
+        }
         const {
             username,
             first_name,
@@ -177,6 +182,11 @@ export const user_otp_verification = async (req: Request, res: Response) => {
 
 export const user_login = async (req: Request, res: Response) => {
     try {
+        const { website } = req.body;
+
+        if (website) {
+            return res.status(400).json({ message: "Bot detected" });
+        }
         const { email, password, username, mobile_No } = req.body;
 
         if (!password) {
@@ -220,11 +230,18 @@ export const user_login = async (req: Request, res: Response) => {
             return res.status(400).json({ message: 'Invalid password!' });
         }
 
-        const token = jwt.sign({ userId: user._id }, process.env.JWT_User_SECRET_KEY as string, { expiresIn: '7d' });
+        const token = jwt.sign(
+            {
+                userId: user._id,
+                ua: req.headers["user-agent"],
+                ip: req.ip
+            },
+            process.env.JWT_User_SECRET_KEY as string,
+            { expiresIn: "7d" }
+        );
+        const safeUser = { _id: user._id, username: user.username, first_name: user.first_name, last_name: user.last_name, email: user.email, profileImg: user.profileImg, role: user.role, bio: user.bio, isOnline: user.isOnline, status: user.status, };
 
-
-
-        res.status(200).json({ message: 'Login successful!', user, token });
+        res.status(200).json({ message: "Login successful!", user: safeUser, token, });
     }
 
     catch (err) { return errorHandler(err, res); }

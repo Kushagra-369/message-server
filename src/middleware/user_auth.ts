@@ -29,6 +29,10 @@ export const authenticateUser = async (
       process.env.JWT_User_SECRET_KEY as string
     ) as JwtPayload;
 
+    if (decoded.ua !== req.headers["user-agent"]) {
+      return res.status(401).json({ message: "Device mismatch" });
+    }
+
     const userId = decoded.userId;
 
     if (!mongoose.Types.ObjectId.isValid(userId)) {
